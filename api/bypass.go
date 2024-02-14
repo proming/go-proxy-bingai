@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 
 	binglib "github.com/Harry-zklcdc/bing-lib"
+	"github.com/Harry-zklcdc/bing-lib/lib/aes"
 	"github.com/Harry-zklcdc/bing-lib/lib/hex"
 )
 
@@ -41,15 +43,41 @@ func BypassHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	token, err := aes.Decrypt(request.T, request.IG)
+	if err != nil {
+		helper.ErrorResult(w, http.StatusInternalServerError, "Server Error")
+		return
+	}
+	if token != common.AUTHOR {
+		helper.ErrorResult(w, http.StatusUnavailableForLegalReasons, "T error")
+		return
+	}
+
 	if request.Url == "" {
 		if common.BypassServer == "" {
 			helper.CommonResult(w, http.StatusInternalServerError, "BypassServer is empty", nil)
 			return
 		}
-		request.Url = common.BypassServer
 	}
 
-	resp, status, err := binglib.Bypass(request.Url, r.Header.Get("Cookie"), "local-gen-"+hex.NewUUID(), request.IG, "", "", request.T)
+	bypassServer := common.BypassServer
+
+	header := http.Header{}
+	header.Add("Cookie", r.Header.Get("Cookie"))
+	req := &http.Request{
+		Header: header,
+	}
+	if cookie, err := req.Cookie(common.PASS_SERVER_COOKIE_NAME); err == nil {
+		bypassServer = cookie.Value
+	}
+	reqCookies := []string{}
+	for _, cookie := range req.Cookies() {
+		if !common.IsInArray(removeCookieName, cookie.Name) {
+			reqCookies = append(reqCookies, cookie.String())
+		}
+	}
+
+	resp, status, err := binglib.Bypass(bypassServer, strings.Join(reqCookies, "; "), "local-gen-"+hex.NewUUID(), request.IG, "", "", request.T)
 	if err != nil {
 		helper.ErrorResult(w, http.StatusInternalServerError, err.Error())
 		return
